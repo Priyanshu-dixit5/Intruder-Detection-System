@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="glass-panel auth-card fade-in">
+    <div class="auth-icon purple">
+        <i class="fas fa-user-shield"></i>
+    </div>
+
+    <h2 class="auth-title">Create Account</h2>
+    <p class="text-muted mb-2 auth-subtitle">Register to start using the detection system</p>
+
+    <form method="POST">
+        <div class="mb-2">
+            <input type="text" name="username" placeholder="Choose a username" required autocomplete="off">
+        </div>
+        <div class="mb-2 input-with-action">
+            <input type="password" name="password" id="passwordField" placeholder="Password (8–12 characters)"
+                required minlength="8" maxlength="12" class="input-has-action">
+            <button type="button" id="togglePassword" class="input-action-btn">
+                <i class="fas fa-eye" id="toggleIcon"></i>
+            </button>
+        </div>
+        <div class="mb-2">
+            <input type="email" name="alert_gmail" placeholder="Alert Gmail (example@gmail.com)" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-block">
+            <i class="fas fa-user-check"></i> Register
+        </button>
+    </form>
+
+    <div class="mt-2 auth-link-wrap">
+        <a href="{{ url_for('login') }}" class="auth-link">
+            Already have an account? <span class="gradient-text" style="font-weight: 600;">Sign in</span>
+        </a>
+    </div>
+</div>
+
+<script>
+    const toggleBtn = document.getElementById('togglePassword');
+    const pf = document.getElementById('passwordField');
+    const ti = document.getElementById('toggleIcon');
+    toggleBtn.addEventListener('click', () => {
+        if (pf.type === 'password') { pf.type = 'text'; ti.classList.replace('fa-eye', 'fa-eye-slash'); toggleBtn.classList.add('active'); }
+        else { pf.type = 'password'; ti.classList.replace('fa-eye-slash', 'fa-eye'); toggleBtn.classList.remove('active'); }
+    });
+</script>
+{% endblock %}

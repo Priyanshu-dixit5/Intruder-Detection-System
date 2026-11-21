@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- STATS ROW -->
+<div class="stats-row fade-in">
+    <div class="stat-card purple">
+        <div class="stat-icon purple"><i class="fas fa-shield-halved"></i></div>
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">Total Detections</div>
+    </div>
+    <div class="stat-card pink">
+        <div class="stat-icon pink"><i class="fas fa-triangle-exclamation"></i></div>
+        <div class="stat-value" id="statIntruders" style="background: linear-gradient(135deg, #f87171, #ec4899); -webkit-background-clip: text;">0</div>
+        <div class="stat-label">Intruders Found</div>
+    </div>
+    <div class="stat-card emerald">
+        <div class="stat-icon emerald"><i class="fas fa-user-check"></i></div>
+        <div class="stat-value" id="statKnown" style="background: linear-gradient(135deg, #34d399, #22d3ee); -webkit-background-clip: text;">0</div>
+        <div class="stat-label">Enrolled profiles</div>
+    </div>
+    <div class="stat-card cyan">
+        <div class="stat-icon cyan"><i class="fas fa-video"></i></div>
+        <div class="stat-value" id="statRecordings" style="background: linear-gradient(135deg, #22d3ee, #a78bfa); -webkit-background-clip: text;">0</div>
+        <div class="stat-label">Recordings</div>
+    </div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="dashboard-grid">
+    <!-- RADAR -->
+    <div class="glass-panel fade-in">
+        <div class="section-header">
+            <h2 class="section-title">
+                <i class="fas fa-satellite-dish"></i>
+                <span>Radar Monitor</span>
+            </h2>
+            <div class="radar-meta">
+                <span>Angle: <strong class="gradient-text" id="angle">0°</strong></span>
+                <span>Distance: <strong class="gradient-text" id="dist">0cm</strong></span>
+            </div>
+        </div>
+
+        <div class="radar-canvas-wrap">
+            <canvas id="radarCanvas" width="600" height="300" class="radar-canvas"></canvas>
+        </div>
+
+        <div id="alert" class="alert-box mt-2" style="display: none;">
+            ⚠️ Object Detected — Capturing & Recording!
+        </div>
+    </div>
+
+    <!-- CAMERA -->
+    <div class="glass-panel fade-in-delay">
+        <div class="section-header">
+            <h2 class="section-title">
+                <i class="fas fa-video"></i>
+                <span>Live Camera</span>
+            </h2>
+            <div id="cameraStatus" class="camera-status">
+                <span class="live-dot hidden" id="liveDot"></span>
+                <span id="statusText">Offline</span>
+            </div>
+        </div>
+
+        <div class="camera-container" id="cameraBox">
+            <img id="camFeed" src="" class="hidden" alt="Live Camera Feed">
+            <div id="offlineMsg" class="camera-offline">
+                <i class="fas fa-video-slash"></i>
+                <br><span>Camera is off — click Start to begin</span>
+            </div>
+            <div id="recOverlay" class="camera-overlay" style="display: none;">
+                <span class="rec-dot"></span> REC
+            </div>
+        </div>
+
+        <div class="mt-2 text-center">
+            <button id="toggleCam" class="btn btn-cyan btn-block">
+                <i class="fas fa-play"></i> Start Camera
+            </button>
+        </div>
+
+        <p class="text-muted mt-1 camera-note">
+            Auto-captures image & records 3-second clip on radar detection
+        </p>
+    </div>
+</div>
+
+<div class="glass-panel fade-in mt-2">
+    <div class="section-header">
+        <h2 class="section-title">
+            <i class="fas fa-bell"></i>
+            <span>Alert Channels</span>
+        </h2>
+    </div>
+    <div id="alertStatusText" class="text-muted mb-2">Checking alert configuration...</div>
+    <button id="testAlertBtn" class="btn btn-outline">
+        <i class="fas fa-paper-plane"></i> Send Test Email + SMS
+    </button>
+    <div id="testAlertResult" class="text-muted mt-1"></div>
+</div>
+
+<script>
+    // --- Stats ---
+    function fetchStats() {
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(d => {
+                animateValue('statTotal', d.total || 0);
+                animateValue('statIntruders', d.intruders || 0);
+                animateValue('statKnown', d.known || 0);
+                animateValue('statRecordings', d.recordings || 0);
+            }).catch(() => {});
+    }
+
+    function animateValue(id, target) {
+        const el = document.getElementById(id);
+        const current = parseInt(el.textContent) || 0;
+        if (current === target) return;
+        const step = target > current ? 1 : -1;
+        let val = current;
+        const timer = setInterval(() => {
+            val += step;
+            el.textContent = val;
+            if (val === target) clearInterval(timer);
+        }, 50);
+    }
+
+    fetchStats();
+    setInterval(fetchStats, 5000);
+
+    // --- Radar ---
+    const canvas = document.getElementById('radarCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = 600, H = 300, cx = W/2, cy = H;
+    const MAX = 20, SC = H / MAX;
+
+    function drawGrid() {
+        ctx.strokeStyle = 'rgba(124, 58, 237, 0.1)';
+        ctx.lineWidth = 1;
+        for (let i = 5; i <= 20; i += 5) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, i * SC, Math.PI, 0);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(167, 139, 250, 0.4)';
+            ctx.font = "11px Inter";
+            ctx.fillText(i + "cm", cx + 5, cy - i * SC + 12);
+        }
+    }
+
+    function drawRadar(a, d) {
+        ctx.fillStyle = 'rgba(12, 10, 26, 0.25)';
+        ctx.fillRect(0, 0, W, H);
+        drawGrid();
+
+        const rad = (180 - a) * Math.PI / 180;
+        const len = MAX * SC;
+
+        // Sweep glow
+        const gradient = ctx.createLinearGradient(cx, cy, cx + Math.cos(rad)*len, cy - Math.sin(rad)*len);
+        gradient.addColorStop(0, 'rgba(124, 58, 237, 0.8)');
+        gradient.addColorStop(1, 'rgba(6, 182, 212, 0.3)');
+
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = '#7c3aed';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(rad)*len, cy - Math.sin(rad)*len);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        if (d > 0 && d <= MAX) {
+            const ox = cx + Math.cos(rad) * d * SC;
+            const oy = cy - Math.sin(rad) * d * SC;
+
+            // Outer glow
+            ctx.fillStyle = 'rgba(236, 72, 153, 0.2)';
+            ctx.beginPath(); ctx.arc(ox, oy, 20, 0, Math.PI*2); ctx.fill();
+
+            // Inner dot
+            ctx.fillStyle = '#ec4899';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#ec4899';
+            ctx.beginPath(); ctx.arc(ox, oy, 8, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            document.getElementById('alert').style.display = 'block';
+            document.getElementById('recOverlay').style.display = 'flex';
+        } else {
+            document.getElementById('alert').style.display = 'none';
+            document.getElementById('recOverlay').style.display = 'none';
+        }
+
+        document.getElementById('angle').innerText = a + "°";
+        document.getElementById('dist').innerText = d + "cm";
+    }
+
+    let scanBusy = false;
+    setInterval(() => {
+        if (scanBusy) return;
+        scanBusy = true;
+        fetch('/get_scan')
+            .then(r => r.json())
+            .then(d => drawRadar(d.angle, d.distance))
+            .catch(() => {})
+            .finally(() => { scanBusy = false; });
+    }, 120);
+
+    // --- Camera ---
+    const camFeed = document.getElementById('camFeed');
+    const offlineMsg = document.getElementById('offlineMsg');
+    const toggleBtn = document.getElementById('toggleCam');
+    const liveDot = document.getElementById('liveDot');
+    const statusText = document.getElementById('statusText');
+    let camOn = false;
+
+    function showCameraLive() {
+        camFeed.classList.remove('hidden');
+        camFeed.style.display = 'block';
+        offlineMsg.classList.add('hidden');
+        offlineMsg.style.display = 'none';
+        liveDot.classList.remove('hidden');
+        statusText.textContent = 'Live';
+        statusText.classList.add('text-online');
+    }
+
+    function showCameraOffline() {
+        camFeed.classList.add('hidden');
+        camFeed.style.display = 'none';
+        offlineMsg.classList.remove('hidden');
+        offlineMsg.style.display = 'block';
+        liveDot.classList.add('hidden');
+        statusText.textContent = 'Offline';
+        statusText.classList.remove('text-online');
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        camOn = !camOn;
+        if (camOn) {
+            camFeed.src = "{{ url_for('video_feed') }}?t=" + Date.now();
+            showCameraLive();
+            toggleBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Camera';
+            toggleBtn.className = 'btn btn-danger btn-block';
+        } else {
+            camFeed.src = "";
+            showCameraOffline();
+            toggleBtn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+            toggleBtn.className = 'btn btn-cyan btn-block';
+        }
+    });
+
+    camFeed.addEventListener('error', () => {
+        camOn = false;
+        camFeed.src = "";
+        showCameraOffline();
+        toggleBtn.innerHTML = '<i class="fas fa-play"></i> Start Camera';
+        toggleBtn.className = 'btn btn-cyan btn-block';
+    });
+
+    async function refreshAlertStatus() {
+        const el = document.getElementById('alertStatusText');
+        try {
+            const r = await fetch('/api/alert_config_status');
+            const d = await r.json();
+            const emailLabel = d.user_alert_gmail || '(not set)';
+            el.innerHTML = `
+                Alert Gmail: <strong>${emailLabel}</strong> |
+                Phone configured: <strong>${d.phone_to_set ? 'Yes' : 'No'}</strong>
+            `;
+        } catch (e) {
+            el.textContent = 'Unable to read alert configuration.';
+        }
+    }
+
+    document.getElementById('testAlertBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('testAlertBtn');
+        const out = document.getElementById('testAlertResult');
+        btn.disabled = true;
+        out.textContent = 'Sending live test alert...';
+        try {
+            const r = await fetch('/api/test_alert', { method: 'POST' });
+            const d = await r.json();
+            const emailStatus = d.result?.email_status || 'N/A';
+            const smsStatus = d.result?.sms_status || 'N/A';
+            out.textContent = `Email: ${emailStatus} | SMS: ${smsStatus}`;
+        } catch (e) {
+            out.textContent = 'Test alert failed to execute.';
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    refreshAlertStatus();
+</script>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-grid train-grid">
+    <div class="glass-panel fade-in text-center">
+        <div class="auth-icon purple train-icon">
+            <i class="fas fa-brain"></i>
+        </div>
+
+        <h2 class="auth-title">Register Known Person</h2>
+        <p class="text-muted mb-2 auth-subtitle">
+            Upload at least 3 clear photos so the system can recognize this person
+        </p>
+
+        <form action="{{ url_for('train_face') }}" method="POST" enctype="multipart/form-data" class="text-left">
+            <div class="mb-2">
+                <label class="form-label">
+                    <i class="fas fa-user icon-primary"></i> Person Name
+                </label>
+                <input type="text" name="name" placeholder="e.g., John Doe" required>
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">
+                    <i class="fas fa-images icon-accent"></i> Upload Photos
+                </label>
+                <div class="upload-wrap">
+                    <input type="file" name="photos" multiple accept="image/*" required class="upload-input">
+                    <p class="text-muted upload-help">
+                        <i class="fas fa-info-circle"></i> Select 3+ images - front, left profile, right profile recommended
+                    </p>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-block">
+                <i class="fas fa-brain"></i> Save & Train Model
+            </button>
+        </form>
+    </div>
+
+    <div class="glass-panel fade-in-delay">
+        <div class="section-header">
+            <h2 class="section-title">
+                <i class="fas fa-user-group"></i>
+                <span>Manage Trained Faces</span>
+            </h2>
+        </div>
+
+        {% if people and people|length > 0 %}
+            <div class="train-list-scroll">
+                {% for person in people %}
+                    <div class="trained-person-card">
+                        <div class="flex-between mb-1">
+                            <div>
+                                <strong>{{ person.name }}</strong>
+                                <span class="text-muted compact-text"> ({{ person.count }} image{{ '' if person.count == 1 else 's' }})</span>
+                            </div>
+                            <form method="POST" action="{{ url_for('delete_known_person') }}"
+                                onsubmit="return confirm('Delete {{ person.name }} and all training images?');">
+                                <input type="hidden" name="person" value="{{ person.name }}">
+                                <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Delete Person</button>
+                            </form>
+                        </div>
+
+                        {% if person.images and person.images|length > 0 %}
+                            <div class="trained-image-grid">
+                                {% for image in person.images %}
+                                    <div class="text-center">
+                                        <img src="{{ url_for('serve_known_face', filename=image.path) }}" class="img-thumb img-thumb-square" alt="{{ person.name }}"
+                                            onclick="openImageModal('{{ url_for('serve_known_face', filename=image.path) }}')">
+                                        <form method="POST" action="{{ url_for('delete_known_image') }}" class="mt-1"
+                                            onsubmit="return confirm('Delete this image for {{ person.name }}?');">
+                                            <input type="hidden" name="person" value="{{ person.name }}">
+                                            <input type="hidden" name="file_name" value="{{ image.file }}">
+                                            <button type="submit" class="btn btn-sm btn-subtle-danger btn-block">
+                                                Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted compact-text">No images available.</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted">No trained persons yet. Add your first known face from the form.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div id="imageModal" class="modal-overlay" onclick="closeImageModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <button onclick="closeImageModal()" class="modal-close">×</button>
+        <img id="modalImage" src="" class="modal-img">
+    </div>
+</div>
+
+<script>
+    function openImageModal(src) {
+        document.getElementById('modalImage').src = src;
+        document.getElementById('imageModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeImageModal() {
+        document.getElementById('imageModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeImageModal();
+    });
+</script>
+{% endblock %}

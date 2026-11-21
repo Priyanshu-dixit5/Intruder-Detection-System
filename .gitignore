@@ -1,0 +1,21 @@
+# Private face recognition data
+known_faces/
+**/known_faces/
+
+# Environment variables
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# IDE
+.vscode/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3

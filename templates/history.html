@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="glass-panel fade-in mt-2">
+    <!-- HEADER -->
+    <div class="section-header">
+        <h2 class="section-title">
+            <i class="fas fa-clock-rotate-left"></i>
+            <span>Detection History</span>
+        </h2>
+        <div class="history-toolbar">
+            <form method="GET" action="{{ url_for('history') }}" class="history-filter-form">
+                <input type="date" name="date" value="{{ date_filter }}"
+                    class="input-date-sm">
+                <button type="submit" class="btn btn-sm">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </form>
+            <button type="button" class="btn btn-outline btn-sm" onclick="refreshFullHistory()">
+                <i class="fas fa-arrows-rotate"></i> Refresh
+            </button>
+            <form method="POST" action="{{ url_for('reset_my_data') }}" class="m-0"
+                onsubmit="return confirm('Delete all your logs, photos, and recordings? Your login stays the same.');">
+                <button type="submit" class="btn btn-sm btn-subtle-danger">
+                    <i class="fas fa-trash-can"></i> Clear my data
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Auto-refresh indicator -->
+    <div class="history-auto-refresh">
+        <span class="live-dot"></span> Auto-refreshing every 3 seconds
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Date & Time</th>
+                    <th>Event</th>
+                    <th>Identity</th>
+                    <th>Angle</th>
+                    <th>Distance</th>
+                    <th>Photo</th>
+                    <th>Recording</th>
+                    <th>Review</th>
+                </tr>
+            </thead>
+            <tbody id="logsTableBody">
+                {% for log in logs %}
+                <tr>
+                    <td><span class="text-muted">#{{ log[0] }}</span></td>
+                    <td class="text-muted compact-text">{{ log[1] }}</td>
+                    <td>
+                        {% if log[2] and 'Intruder' in log[2] %}
+                        <span class="badge badge-danger">⚠️ Intruder</span>
+                        {% elif log[2] and 'Processing' in log[2] %}
+                        <span class="badge badge-warning">⏳ Analyzing</span>
+                        {% elif log[2] and 'Known' in log[2] %}
+                        <span class="badge badge-success">✅ Known</span>
+                        {% else %}
+                        <span class="badge badge-warning">ℹ️ Review</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log[3] and log[3] != 'Unknown' and log[3] != 'Analyzing...' %}
+                        <strong class="text-accent">{{ log[3] }}</strong>
+                        {% elif log[3] == 'Analyzing...' %}
+                        <span class="text-warning processing-text">Processing...</span>
+                        {% else %}
+                        <span class="text-muted">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted">{{ log[6] if log[6] is not none else 0 }}°</td>
+                    <td class="text-muted">{{ log[7] if log[7] is not none else 0 }}cm</td>
+
+                    <!-- Photo -->
+                    <td>
+                        {% if log[4] %}
+                        <img src="{{ url_for('serve_capture', filename=log[4]) }}" class="img-thumb"
+                            onclick="openImageModal('{{ url_for('serve_capture', filename=log[4]) }}')"
+                            onerror="this.style.display='none'">
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Recording -->
+                    <td>
+                        {% if log[5] %}
+                            {% if 'manifest.json' in log[5] %}
+                            <button class="btn btn-sm btn-cyan" onclick="playFrameSequence('{{ url_for('serve_recording', filename=log[5]) }}')">
+                                <i class="fas fa-play"></i> Frames
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm btn-cyan" onclick="openVideoModal('{{ url_for('serve_recording', filename=log[5]) }}', '/recordings_manifest/{{ log[5] }}')">
+                                <i class="fas fa-play"></i> Play
+                            </button>
+                            {% endif %}
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="review-actions">
+                            <button class="btn btn-sm btn-like {{ 'active' if (log[8] or 0) == 1 else '' }}"
+                                onclick="submitReview({{ log[0] }}, 'like')">
+                                <i class="fas fa-thumbs-up"></i>
+                            </button>
+                            <button class="btn btn-sm btn-dislike {{ 'active' if (log[8] or 0) == -1 else '' }}"
+                                onclick="submitReview({{ log[0] }}, 'dislike')">
+                                <i class="fas fa-thumbs-down"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+
+                {% if not logs %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted table-empty">
+                        <i class="fas fa-inbox table-empty-icon"></i>
+                        No detection events yet. The system will log detections here automatically.
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- IMAGE MODAL -->
+<div id="imageModal" class="modal-overlay" onclick="closeImageModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <button onclick="closeImageModal()" class="modal-close">×</button>
+        <img id="modalImage" src="" class="modal-img">
+        <p id="modalCaption" class="text-muted text-center mt-1 compact-text"></p>
+    </div>
+</div>
+
+<!-- VIDEO MODAL -->
+<div id="videoModal" class="modal-overlay" onclick="closeVideoModal()">
+    <div class="modal-content modal-wide" onclick="event.stopPropagation()">
+        <button onclick="closeVideoModal()" class="modal-close">×</button>
+        <video id="modalVideo" controls autoplay class="modal-media">
+        </video>
+        <p class="text-muted text-center mt-1 compact-text">3-Second Detection Recording</p>
+    </div>
+</div>
+
+<!-- FRAME SEQUENCE MODAL -->
+<div id="frameModal" class="modal-overlay" onclick="closeFrameModal()">
+    <div class="modal-content modal-wide" onclick="event.stopPropagation()">
+        <button onclick="closeFrameModal()" class="modal-close">×</button>
+        <img id="frameImage" src="" class="modal-media">
+        <div class="text-center mt-1 frame-counter-wrap">
+            <span class="text-muted compact-text">Frame <span id="frameCounter">1</span></span>
+        </div>
+    </div>
+</div>
+
+<script>
+    let previousHash = '';
+    let isUpdating = false;
+
+    // --- MODALS ---
+    function openImageModal(src) {
+        document.getElementById('modalImage').src = src;
+        document.getElementById('modalCaption').textContent = src.split('/').pop();
+        document.getElementById('imageModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+    function closeImageModal() {
+        document.getElementById('imageModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    function openVideoModal(src, manifestFallbackUrl = '') {
+        const video = document.getElementById('modalVideo');
+        video.onerror = null;
+        video.src = src;
+        video.load();
+        document.getElementById('videoModal').style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        video.play().catch(() => {});
+
+        // If the browser can't decode the video (e.g. legacy AVI), fall back to frame playback.
+        video.onerror = () => {
+            try { closeVideoModal(); } catch (e) {}
+            if (manifestFallbackUrl) playFrameSequence(manifestFallbackUrl);
+        };
+    }
+    function closeVideoModal() {
+        const v = document.getElementById('modalVideo');
+        v.pause(); v.src = '';
+        document.getElementById('videoModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    // Frame sequence player
+    let frameTimer = null;
+    function playFrameSequence(manifestUrl) {
+        const baseUrl = manifestUrl.substring(0, manifestUrl.lastIndexOf('/') + 1);
+        fetch(manifestUrl)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.frames || !data.frames.length) return;
+                const img = document.getElementById('frameImage');
+                const counter = document.getElementById('frameCounter');
+                let idx = 0;
+                img.src = baseUrl + encodeURIComponent(data.frames[0]);
+                counter.textContent = '1 / ' + data.frames.length;
+                document.getElementById('frameModal').style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+
+                if (frameTimer) clearInterval(frameTimer);
+                const fps = (data.fps && data.fps > 0) ? data.fps : (data.frames.length / (data.duration || 3));
+                const interval = Math.max(1000 / fps, 50);
+                frameTimer = setInterval(() => {
+                    idx = (idx + 1) % data.frames.length;
+                    img.src = baseUrl + encodeURIComponent(data.frames[idx]);
+                    counter.textContent = (idx + 1) + ' / ' + data.frames.length;
+                }, interval);
+            }).catch(e => console.error('Frame sequence error:', e));
+    }
+    function closeFrameModal() {
+        if (frameTimer) { clearInterval(frameTimer); frameTimer = null; }
+        document.getElementById('frameModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { closeImageModal(); closeVideoModal(); closeFrameModal(); }
+    });
+
+    function logsApiUrl() {
+        const p = new URLSearchParams(window.location.search);
+        const d = p.get('date');
+        if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return '/api/logs?date=' + encodeURIComponent(d);
+        return '/api/logs';
+    }
+
+    function refreshFullHistory() {
+        window.location.href = "{{ url_for('history') }}";
+    }
+
+    function submitReview(logId, action) {
+        fetch('/api/review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ log_id: logId, action })
+        })
+            .then(r => r.json())
+            .then(res => {
+                if (!res.ok && !res.unchanged) return;
+                fetchLogs();
+            })
+            .catch(e => console.error('review error', e));
+    }
+
+    // --- AUTO-REFRESH ---
+    function fetchLogs() {
+        if (isUpdating) return;
+        isUpdating = true;
+
+        fetch(logsApiUrl())
+            .then(r => r.json())
+            .then(data => {
+                const hash = JSON.stringify(data);
+                if (hash === previousHash) { isUpdating = false; return; }
+                previousHash = hash;
+
+                const tbody = document.getElementById('logsTableBody');
+                if (!data.length) {
+                    tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding:50px;">
+                        <i class="fas fa-inbox" style="font-size:2rem;opacity:0.3;display:block;margin-bottom:10px;"></i>
+                        No detection events yet.</td></tr>`;
+                    isUpdating = false;
+                    return;
+                }
+
+                let html = '';
+                data.forEach(log => {
+                    let eventBadge = '';
+                    if (log.event_type?.includes('Processing'))
+                        eventBadge = `<span class="badge badge-warning">⏳ Analyzing</span>`;
+                    else if (log.event_type?.includes('Intruder'))
+                        eventBadge = `<span class="badge badge-danger">⚠️ Intruder</span>`;
+                    else if (log.event_type?.includes('Known'))
+                        eventBadge = `<span class="badge badge-success">✅ Known</span>`;
+                    else
+                        eventBadge = `<span class="badge badge-warning">ℹ️ Review</span>`;
+
+                    let identity = '';
+                    if (log.person_name === 'Analyzing...')
+                        identity = `<span class="text-warning processing-text">Processing...</span>`;
+                    else if (log.person_name && log.person_name !== 'Unknown')
+                        identity = `<strong class="text-accent">${log.person_name}</strong>`;
+                    else
+                        identity = `<span class="text-muted">Unknown</span>`;
+
+                    let photo = '<span class="text-muted">—</span>';
+                    if (log.image_path) {
+                        const url = `/captures/${log.image_path}`;
+                        photo = `<img src="${url}" class="img-thumb" onclick="openImageModal('${url}')" onerror="this.style.display='none'">`;
+                    }
+
+                    let rec = '<span class="text-muted">—</span>';
+                    if (log.recording_path) {
+                        if (log.recording_path.includes('manifest.json')) {
+                            const rUrl = `/recordings/${log.recording_path}`;
+                            rec = `<button class="btn btn-sm btn-cyan" onclick="playFrameSequence('${rUrl}')"><i class="fas fa-play"></i> Frames</button>`;
+                        } else {
+                            const rUrl = `/recordings/${log.recording_path}`;
+                            const mUrl = `/recordings_manifest/${log.recording_path}`;
+                            rec = `<button class="btn btn-sm btn-cyan" onclick="openVideoModal('${rUrl}', '${mUrl}')"><i class="fas fa-play"></i> Play</button>`;
+                        }
+                    }
+
+                    const reviewState = Number(log.review_status || 0);
+                    const review = `
+                        <div class="review-actions">
+                            <button class="btn btn-sm btn-like ${reviewState === 1 ? 'active' : ''}"
+                                onclick="submitReview(${log.id}, 'like')">
+                                <i class="fas fa-thumbs-up"></i>
+                            </button>
+                            <button class="btn btn-sm btn-dislike ${reviewState === -1 ? 'active' : ''}"
+                                onclick="submitReview(${log.id}, 'dislike')">
+                                <i class="fas fa-thumbs-down"></i>
+                            </button>
+                        </div>`;
+
+                    html += `<tr>
+                        <td><span class="text-muted">#${log.id}</span></td>
+                        <td class="text-muted compact-text">${log.timestamp}</td>
+                        <td>${eventBadge}</td>
+                        <td>${identity}</td>
+                        <td class="text-muted">${log.angle || 0}°</td>
+                        <td class="text-muted">${log.distance || 0}cm</td>
+                        <td>${photo}</td>
+                        <td>${rec}</td>
+                        <td>${review}</td>
+                    </tr>`;
+                });
+
+                tbody.innerHTML = html;
+                isUpdating = false;
+            })
+            .catch(e => { console.error(e); isUpdating = false; });
+    }
+
+    setInterval(fetchLogs, 3000);
+    setTimeout(fetchLogs, 500);
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Log</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 20px; }
+        h1 { text-align: center; color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #ff4b4b; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .thumbnail { width: 100px; height: auto; border-radius: 5px; cursor: pointer; transition: 0.3s; }
+        .thumbnail:hover { transform: scale(1.5); }
+        a { text-decoration: none; color: inherit; }
+    </style>
+</head>
+<body>
+
+    <h1>🚨 Intrusion Detection Logs</h1>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date & Time</th>
+                <th>Event</th>
+                <th>Snapshot (Click to View)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td>{{ log['id'] }}</td>
+                <td>{{ log['timestamp'] }}</td>
+                <td><strong>{{ log['event_type'] }}</strong></td>
+                <td>
+                    <a href="{{ url_for('static', filename='captures/' + log['image_path']) }}" target="_blank">
+                        <img src="{{ url_for('static', filename='captures/' + log['image_path']) }}" class="thumbnail">
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</body>
+</html>

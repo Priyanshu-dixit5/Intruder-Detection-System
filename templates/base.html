@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intruder Detection System</title>
+    <meta name="description" content="Radar-based Intruder Detection System with Face Recognition — BCA Final Year Project">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body>
+    <!-- Animated background orbs -->
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+
+    <nav class="navbar">
+        <a href="/" class="brand">
+            <span class="brand-emoji">🛡️</span> Intruder Detection System
+        </a>
+        <div class="nav-links">
+            {% if session.user %}
+            <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">
+                <i class="fas fa-gauge-high"></i> Dashboard
+            </a>
+            <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' else '' }}">
+                <i class="fas fa-clock-rotate-left"></i> Logs
+            </a>
+            <a href="{{ url_for('train_face') }}" class="{{ 'active' if request.endpoint == 'train_face' else '' }}">
+                <i class="fas fa-user-plus"></i> Train Face
+            </a>
+            <a href="{{ url_for('logout') }}" class="logout-link">
+                <i class="fas fa-right-from-bracket"></i> Logout
+            </a>
+            {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}">Register</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        {% for message in messages %}
+        <div class="flash-msg">
+            <i class="fas fa-circle-info"></i> {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

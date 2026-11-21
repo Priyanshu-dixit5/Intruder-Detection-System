@@ -1,0 +1,7 @@
+Flask
+opencv-python
+pyserial
+deepface
+tf-keras
+numpy
+twilio
