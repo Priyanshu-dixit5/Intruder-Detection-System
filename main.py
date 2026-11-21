@@ -45,6 +45,7 @@ import mimetypes
 from datetime import datetime
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, jsonify, flash, abort, Response, send_file)
+from werkzeug.middleware.proxy_fix import ProxyFix
 from deepface import DeepFace
 from test_gmail import send_dual_alert
 
@@ -52,11 +53,18 @@ app = Flask(__name__)
 TYPE_SAFE_BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_local_env(os.path.join(TYPE_SAFE_BASE_DIR, ".env"))
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "change_me_secret_key")
+# Render (and other HTTPS proxies) terminate TLS in front of the app.
+if os.getenv("RENDER"):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 # --- CONFIGURATION ---
 SERIAL_PORT = os.getenv("SERIAL_PORT", "COM3").strip()
 BAUD_RATE = int(os.getenv("BAUD_RATE", "115200").strip() or "115200")
-DB_NAME = os.getenv("DB_NAME", "radar.db").strip() or "radar.db"
+_db_name = os.getenv("DB_NAME", "radar.db").strip() or "radar.db"
+DB_NAME = _db_name if os.path.isabs(_db_name) else os.path.join(TYPE_SAFE_BASE_DIR, _db_name)
 SAVE_DIR = os.path.join(TYPE_SAFE_BASE_DIR, "static", "captures")
 RECORDINGS_DIR = os.path.join(TYPE_SAFE_BASE_DIR, "static", "recordings")
 KNOWN_FACES_DIR = os.path.join(TYPE_SAFE_BASE_DIR, "known_faces")
@@ -127,9 +135,16 @@ recognition_queue = queue.Queue(maxsize=24)
 
 
 # --- DATABASE HELPER ---
+_db_init_lock = threading.Lock()
+_db_initialized = False
+
+
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, timeout=30, check_same_thread=False)
-    conn.execute('PRAGMA journal_mode=WAL')
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+    except sqlite3.Error:
+        conn.execute('PRAGMA journal_mode=DELETE')
     conn.execute('PRAGMA busy_timeout=30000')
     conn.execute('PRAGMA foreign_keys=ON')
     return conn
@@ -281,6 +296,18 @@ def init_db():
 
     conn.close()
     print("Database initialized")
+
+
+def ensure_db():
+    """Create tables on first use. Required for gunicorn (skips `if __name__ == '__main__'`)."""
+    global _db_initialized
+    if _db_initialized:
+        return
+    with _db_init_lock:
+        if _db_initialized:
+            return
+        init_db()
+        _db_initialized = True
 
 
 def get_user_alert_gmail(user_id):
@@ -1208,18 +1235,24 @@ def home():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     global current_user_id
+    ensure_db()
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         if not valid_password(password):
             flash("Password must be between 8 and 12 characters.")
             return render_template('login.html')
-        with db_lock:
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("SELECT id, username FROM users WHERE username=? AND password=?", (username, password))
-            user = c.fetchone()
-            conn.close()
+        try:
+            with db_lock:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT id, username FROM users WHERE username=? AND password=?", (username, password))
+                user = c.fetchone()
+                conn.close()
+        except sqlite3.Error as e:
+            print(f"Login DB error: {e}")
+            flash("Login failed. Please try again.")
+            return render_template('login.html')
         if user:
             session['user'] = user[1]
             session['user_id'] = user[0]
@@ -1233,6 +1266,7 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    ensure_db()
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -1256,6 +1290,9 @@ def register():
             return redirect(url_for('login'))
         except sqlite3.IntegrityError:
             flash("Username already exists!")
+        except sqlite3.Error as e:
+            print(f"Register DB error: {e}")
+            flash("Registration failed. Please try again.")
     return render_template('register.html')
 
 
@@ -1766,8 +1803,14 @@ def api_stats():
 # ========================================
 # START
 # ========================================
+# Gunicorn imports this module and never runs `__main__`. Create tables at import.
+try:
+    ensure_db()
+except Exception as e:
+    print(f"Database init at import failed: {e}")
+
 if __name__ == '__main__':
-    init_db()
+    ensure_db()
     reconcile_stale_processing_logs()
     if not shutil.which('ffmpeg'):
         print("Tip: Install ffmpeg and add it to PATH for browser-playable H.264 recordings (.mp4).")
@@ -1779,10 +1822,12 @@ if __name__ == '__main__':
     threading.Thread(target=recognition_worker, daemon=True).start()
     threading.Thread(target=stale_processing_sweeper, daemon=True).start()
 
+    port = int(os.environ.get("PORT", "5000") or "5000")
+    on_render = bool(os.environ.get("RENDER"))
     print("=" * 50)
     print("  Intruder Detection System")
     print(f"  Face model: {FACE_MODEL_NAME} ({FACE_DISTANCE_METRIC} ≤ {FACE_ACCEPT_THRESHOLD})")
     print(f"  Detectors: {', '.join(FACE_DETECTOR_CHAIN)} (async recognition queue)")
-    print("  http://127.0.0.1:5000")
+    print(f"  http://127.0.0.1:{port}")
     print("=" * 50)
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=not on_render, host="0.0.0.0", port=port, use_reloader=False)
